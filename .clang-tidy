@@ -37,6 +37,7 @@ Checks: >
   google-*,
   -google-readability-todo,
   -google-default-arguments,
+  -google-runtime-int,
   misc-*,
   -misc-non-private-member-variables-in-classes,
   -misc-unused-parameters,

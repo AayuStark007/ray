@@ -1,0 +1,5 @@
+# /Users/helios/work/aom_ray/ray/.clangd
+CompileFlags:
+  Add:
+    - "-Wno-unknown-warning-option"
+
