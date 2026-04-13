@@ -696,6 +696,38 @@ RAY_CONFIG(float, object_spilling_threshold, 0.8)
 /// Maximum number of objects that can be fused into a single file.
 RAY_CONFIG(int64_t, max_fused_object_count, 2000)
 
+// === AOM (Adaptive Object Manager) Configuration ===
+
+/// Master switch for the Adaptive Object Manager.
+/// When false, all AOM code paths are skipped and stock Ray behaviour is preserved.
+RAY_CONFIG(bool, aom_enabled, false)
+
+/// Interval (ms) at which the AOM Enforcer checks memory usage.
+/// Stock Ray's reactive check runs at free_objects_period_milliseconds (default 1000ms).
+/// AOM should be more responsive.
+RAY_CONFIG(uint64_t, aom_check_interval_ms, 100)
+
+/// High watermark (fraction of store capacity).
+/// If usage >= this, trigger aggressive spilling via the existing reactive path.
+/// Should be <= object_spilling_threshold (0.8) so AOM acts first.
+RAY_CONFIG(double, aom_high_watermark, 0.8)
+
+/// Target watermark. Proactive spilling brings usage down toward this level.
+RAY_CONFIG(double, aom_target_watermark, 0.7)
+
+/// Low watermark. No proactive action needed below this level.
+RAY_CONFIG(double, aom_low_watermark, 0.6)
+
+/// Exponential decay rate for the recency component of temperature.
+/// Units: per-nanosecond. Default 1e-9 gives ~0.7s half-life.
+RAY_CONFIG(double, aom_temperature_decay_rate, 1e-9)
+
+/// Eviction policy name. Options: "frequency_weighted", "lru_k".
+RAY_CONFIG(std::string, aom_eviction_policy, "frequency_weighted")
+
+/// K parameter for LRU-K policy (only used when aom_eviction_policy = "lru_k").
+RAY_CONFIG(int32_t, aom_lru_k, 2)
+
 /// Grace period until we throw the OOM error to the application in seconds.
 /// In unlimited allocation mode, this is the time delay prior to fallback allocating.
 RAY_CONFIG(int64_t, oom_grace_period_s, 2)
