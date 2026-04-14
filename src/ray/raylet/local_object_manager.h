@@ -23,18 +23,19 @@
 #include <cmath>
 
 #include "absl/strings/str_format.h"
+#include "absl/time/clock.h"
 #include "ray/common/id.h"
 #include "ray/common/ray_object.h"
 #include "ray/core_worker_rpc_client/core_worker_client_pool.h"
 #include "ray/object_manager/object_directory.h"
 #include "ray/observability/metric_interface.h"
 #include "ray/pubsub/subscriber_interface.h"
+#include "ray/raylet/aom_types.h"
 #include "ray/raylet/local_object_manager_interface.h"
 #include "ray/raylet/metrics.h"
 #include "ray/raylet/worker_pool.h"
 #include "ray/util/logging.h"
 #include "ray/util/time.h"
-#include "absl/time/clock.h"
 
 namespace ray {
 
@@ -43,22 +44,7 @@ namespace raylet {
 /// The default number of retries when spilled object deletion failed.
 inline constexpr int64_t kDefaultSpilledObjectDeleteRetries = 3;
 
-/// Per-object access statistics tracked by the AOM Observer.
-struct ObjectAccessStats {
-  int64_t created_at_ns = 0;
-  int64_t last_access_ns = 0;
-  uint64_t access_count = 0;
-  size_t object_size = 0;
-  bool was_restored = false;
-
-  double ComputeTemperature(int64_t now_ns, double decay_rate) const {
-    double recency = std::exp(-decay_rate * static_cast<double>(now_ns - last_access_ns));
-    double frequency = static_cast<double>(access_count);
-    double size_cost = std::log1p(static_cast<double>(object_size));
-    double restore_bonus = was_restored ? 1.5 : 1.0;
-    return (frequency * recency * size_cost) * restore_bonus;
-  }
-};
+class AOMPolicy;
 
 /// This class implements memory management for primary objects, objects that
 /// have been freed, and objects that have been spilled.
@@ -250,6 +236,15 @@ class LocalObjectManager : public LocalObjectManagerInterface {
 
   /// Compute and log temperature for all tracked objects (debug helper).
   void LogObjectTemperatures() const override;
+
+  /// Proactively spill the coldest objects to bring usage below the target watermark.
+  /// Uses the AOM policy to select candidates. Returns true if spilling was initiated.
+  bool SpillObjectsProactively() override;
+
+  /// Set the AOM eviction policy.
+  void SetAOMPolicy(std::shared_ptr<AOMPolicy> policy) override {
+    aom_policy_ = std::move(policy);
+  }
 
  private:
   struct LocalObjectInfo {
@@ -477,6 +472,9 @@ class LocalObjectManager : public LocalObjectManagerInterface {
   /// Total capacity of the object store in bytes.
   /// Set by the Enforcer (NodeManager passes this in).
   int64_t total_store_capacity_ = 0;
+
+  /// The pluggable AOM eviction policy (set by NodeManager on startup).
+  std::shared_ptr<AOMPolicy> aom_policy_;
 
   friend class LocalObjectManagerTestWithMinSpillingSize;
 };

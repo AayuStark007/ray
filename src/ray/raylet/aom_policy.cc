@@ -71,5 +71,5 @@ namespace raylet {
             
             return candidates;
     }
-}
-}
+}  // namespace raylet
+}  // namespace ray

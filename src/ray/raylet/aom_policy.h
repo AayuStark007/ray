@@ -24,7 +24,7 @@
 #include "absl/time/clock.h"
 #include "ray/common/id.h"
 #include "ray/common/ray_object.h"
-#include "ray/raylet/local_object_manager.h"
+#include "ray/raylet/aom_types.h"
 
 namespace ray {
 namespace raylet {
@@ -57,5 +57,5 @@ namespace raylet {
         private:
         double decay_rate_;
     };
-}
-}
+}  // namespace raylet
+}  // namespace ray

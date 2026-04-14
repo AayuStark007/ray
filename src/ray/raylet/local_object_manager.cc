@@ -21,9 +21,10 @@
 #include <vector>
 
 #include "absl/strings/str_format.h"
-#include "ray/common/asio/instrumented_io_context.h"
-#include "ray/stats/tag_defs.h"
 #include "absl/time/clock.h"
+#include "ray/common/asio/instrumented_io_context.h"
+#include "ray/raylet/aom_policy.h"
+#include "ray/stats/tag_defs.h"
 
 namespace ray {
 
@@ -761,6 +762,45 @@ void LocalObjectManager::LogObjectTemperatures() const {
                   << " size=" << stats.object_size
                   << " restored=" << stats.was_restored;
   }
+}
+
+bool LocalObjectManager::SpillObjectsProactively() {
+  if (!aom_policy_ || total_store_capacity_ <= 0) {
+    return false;
+  }
+  if (RayConfig::instance().object_spilling_config().empty()) {
+    return false;
+  }
+
+  int64_t primary_bytes = GetPrimaryBytes();
+  int64_t target_bytes = static_cast<int64_t>(
+    RayConfig::instance().aom_target_watermark() * total_store_capacity_);
+  int64_t bytes_to_free = primary_bytes - target_bytes;
+
+  if (bytes_to_free <= 0) {
+    return false;
+  }
+
+  RAY_LOG(INFO) << "AOM: Proactive spill: primary_bytes=" << primary_bytes
+                << " target_bytes=" << target_bytes
+                << " bytes_to_free=" << bytes_to_free
+                << " policy=" << aom_policy_->Name();
+  
+  auto candidates = aom_policy_->SelectEvictionCandidates(
+    access_stats_, pinned_objects_, is_plasma_object_spillable_, bytes_to_free);
+  
+  if (candidates.empty()) {
+    RAY_LOG(DEBUG) << "AOM: No spillable candidates found.";
+    return false;
+  }
+
+  RAY_LOG(INFO) << "AOM: Spilling " << candidates.size() << " coldest objects.";
+  SpillObjectsInternal(candidates, [](const ray::Status &status) {
+    if (!status.ok()) {
+      RAY_LOG(WARNING) << "AOM: Proactive spill failed: " << status.ToString();
+    }
+  });
+  return true;
 }
 
 };  // namespace raylet

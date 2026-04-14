@@ -165,11 +165,19 @@ ray_cc_library(
 )
 
 ray_cc_library(
+    name = "aom_types",
+    hdrs = ["aom_types.h"],
+    visibility = [":__subpackages__"],
+)
+
+ray_cc_library(
     name = "local_object_manager",
     srcs = ["local_object_manager.cc"],
     hdrs = ["local_object_manager.h"],
     visibility = [":__subpackages__"],
     deps = [
+        ":aom_policy",
+        ":aom_types",
         ":local_object_manager_interface",
         ":worker_pool",
         "//src/ray/common:asio",
@@ -192,7 +200,7 @@ ray_cc_library(
     hdrs = ["aom_policy.h"],
     visibility = [":__subpackages__"],
     deps = [
-        ":local_object_manager",
+        ":aom_types",
         "//src/ray/common:id",
         "//src/ray/common:ray_object",
         "//src/ray/util:logging",
@@ -292,6 +300,7 @@ ray_cc_library(
     }),
     visibility = [":__subpackages__"],
     deps = [
+        ":aom_policy",
         ":agent_manager",
         ":lease_dependency_manager",
         ":local_object_manager_interface",

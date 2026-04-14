@@ -27,6 +27,7 @@ namespace ray {
 
 namespace raylet {
 
+class AOMPolicy; // Forward decl
 class LocalObjectManagerInterface {
  public:
   virtual ~LocalObjectManagerInterface() = default;
@@ -73,6 +74,10 @@ class LocalObjectManagerInterface {
   virtual int64_t GetTotalStoreCapacity() const = 0;
 
   virtual void LogObjectTemperatures() const = 0;
+
+  virtual bool SpillObjectsProactively() = 0;
+
+  virtual void SetAOMPolicy(std::shared_ptr<class AOMPolicy>) = 0;
 };
 
 };  // namespace raylet

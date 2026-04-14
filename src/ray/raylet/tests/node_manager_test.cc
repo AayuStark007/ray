@@ -109,6 +109,10 @@ class FakeLocalObjectManager : public LocalObjectManagerInterface {
 
   void LogObjectTemperatures() const override {}
 
+  bool SpillObjectsProactively() override { return false; }
+
+  void SetAOMPolicy(std::shared_ptr<ray::raylet::AOMPolicy>) override {}
+
  private:
   std::shared_ptr<absl::flat_hash_set<ObjectID>> objects_pending_deletion_;
 };

@@ -65,6 +65,7 @@
 #include "ray/util/process_utils.h"
 #include "ray/util/string_utils.h"
 #include "ray/util/time.h"
+#include "ray/raylet/aom_policy.h"
 
 namespace ray::raylet {
 
@@ -437,6 +438,20 @@ void NodeManager::RegisterGcs() {
                     << object_manager_.GetMemoryCapacity()
                     << " bytes. Check interval: "
                     << RayConfig::instance().aom_check_interval_ms() << "ms.";
+      // AOM: Create and inject the eviction policy.
+      std::shared_ptr<ray::raylet::AOMPolicy> aom_policy;
+      const auto &policy_name = RayConfig::instance().aom_eviction_policy();
+      if (policy_name == "frequency_weighted") {
+        aom_policy = std::make_shared<ray::raylet::FrequencyWeightedPolicy>(
+          RayConfig::instance().aom_temperature_decay_rate());
+      } else {
+        RAY_LOG(WARNING) << "AOM: Unknown policy '" << policy_name
+                         << "', defaulting to frequency_weighted.";
+        aom_policy = std::make_shared<ray::raylet::FrequencyWeightedPolicy>(
+          RayConfig::instance().aom_temperature_decay_rate());
+      }
+      local_object_manager_.SetAOMPolicy(aom_policy);
+      RAY_LOG(INFO) << "AOM: Using eviction policy: " << aom_policy->Name();
     }
 
     // AOM: Register proactive spill check.
@@ -454,11 +469,7 @@ void NodeManager::RegisterGcs() {
           } else if (usage >= RayConfig::instance().aom_target_watermark()) {
             RAY_LOG(INFO) << "AOM: Usage " << usage * 100
                           << "% >= target watermark, proactive spill.";
-            // TODO(Week 4): Use Strategist to select coldest objects and spill
-            // just enough to get below target watermark. For now, fall through
-            // to the existing spill path (which drains everything above threshold).
-            local_object_manager_.SpillObjectUptoMaxThroughput();
-            local_object_manager_.LogObjectTemperatures();
+            local_object_manager_.SpillObjectsProactively();
           } else {
             RAY_LOG(DEBUG) << "AOM: Usage " << usage * 100
                            << "% below target watermark, no action.";
