@@ -429,6 +429,42 @@ void NodeManager::RegisterGcs() {
           RayConfig::instance().free_objects_period_milliseconds(),
           "NodeManager.deadline_timer.spill_objects_when_over_threshold");
     }
+    // AOM: Pass object store capacity to LocalObjectManager
+    if (RayConfig::instance().aom_enabled()) {
+      local_object_manager_.SetTotalStoreCapacity(
+        object_manager_.GetMemoryCapacity());
+      RAY_LOG(INFO) << "AOM enabled. Store capacity: "
+                    << object_manager_.GetMemoryCapacity()
+                    << " bytes. Check interval: "
+                    << RayConfig::instance().aom_check_interval_ms() << "ms.";
+    }
+
+    // AOM: Register proactive spill check.
+    if (RayConfig::instance().aom_enabled() &&
+        !RayConfig::instance().object_spilling_config().empty()) {
+      periodical_runner_->RunFnPeriodically(
+        [this] {
+          const double usage =
+            static_cast<double>(local_object_manager_.GetPrimaryBytes()) /
+            object_manager_.GetMemoryCapacity();
+          if (usage >= RayConfig::instance().aom_high_watermark()) {
+            RAY_LOG(INFO) << "AOM: Usage " << usage * 100
+                          << "% >= high watermark, triggering agressive spill.";
+            local_object_manager_.SpillObjectUptoMaxThroughput();
+          } else if (usage >= RayConfig::instance().aom_target_watermark()) {
+            RAY_LOG(INFO) << "AOM: Usage " << usage * 100
+                          << "% >= target watermark, initiating proactive spill.";
+            // TODO: Use strategist to select coldest objects and spill them.
+            // For now, fall through to the existing spill path.
+            local_object_manager_.SpillObjectUptoMaxThroughput();
+          } else {
+            RAY_LOG(INFO) << "AOM: Usage " << usage * 100
+                          << "% below target watermark, no action.";
+          }
+        },
+        RayConfig::instance().aom_check_interval_ms(),
+        "NodeManager.aom.proactive_spill_check");
+    }
   }
   /// If periodic asio stats print is enabled, it will print it.
   const auto event_stats_print_interval_ms =

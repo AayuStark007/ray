@@ -182,6 +182,7 @@ ray_cc_library(
         "//src/ray/pubsub:subscriber_interface",
         "//src/ray/util:time",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/time",
     ],
 )
 

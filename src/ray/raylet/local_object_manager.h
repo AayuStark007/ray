@@ -20,6 +20,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <cmath>
 
 #include "absl/strings/str_format.h"
 #include "ray/common/id.h"
@@ -33,6 +34,7 @@
 #include "ray/raylet/worker_pool.h"
 #include "ray/util/logging.h"
 #include "ray/util/time.h"
+#include "absl/time/clock.h"
 
 namespace ray {
 
@@ -40,6 +42,23 @@ namespace raylet {
 
 /// The default number of retries when spilled object deletion failed.
 inline constexpr int64_t kDefaultSpilledObjectDeleteRetries = 3;
+
+/// Per-object access statistics tracked by the AOM Observer.
+struct ObjectAccessStats {
+  int64_t created_at_ns = 0;
+  int64_t last_access_ns = 0;
+  uint64_t access_count = 0;
+  size_t object_size = 0;
+  bool was_restored = false;
+
+  double ComputeTemperature(int64_t now_ns, double decay_rate) const {
+    double recency = std::exp(-decay_rate * static_cast<double>(now_ns - last_access_ns));
+    double frequency = static_cast<double>(access_count);
+    double size_cost = std::log1p(static_cast<double>(object_size));
+    double restore_bonus = was_restored ? 1.5 : 1.0;
+    return (frequency * recency * size_cost) * restore_bonus;
+  }
+};
 
 /// This class implements memory management for primary objects, objects that
 /// have been freed, and objects that have been spilled.
@@ -209,6 +228,28 @@ class LocalObjectManager : public LocalObjectManagerInterface {
   bool HasLocallySpilledObjects() const override;
 
   std::string DebugString() const override;
+
+  /// === AOM Observer Methods ===
+
+  /// Record an access event for an object (creation, restore, etc.).
+  void RecordObjectAccess(const ObjectID &object_id, size_t object_size);
+
+  /// Remove access stats for an object that has been freed.
+  void RemoveObjectAccessStats(const ObjectID &object_id);
+
+  /// Set the total object store capacity (called by NodeManager during init).
+  void SetTotalStoreCapacity(int64_t capacity) override { total_store_capacity_ = capacity; };
+
+  /// Get the total object store capacity.
+  int64_t GetTotalStoreCapacity() const override { return total_store_capacity_; };
+
+  /// Get a const reference to the access stats map (for the Strategist).
+  const absl::flat_hash_map<ObjectID, ObjectAccessStats> &GetAccessStats() const {
+    return access_stats_;
+  }
+
+  /// Compute and log temperature for all tracked objects (debug helper).
+  void LogObjectTemperatures() const;
 
  private:
   struct LocalObjectInfo {
@@ -426,6 +467,16 @@ class LocalObjectManager : public LocalObjectManagerInterface {
 
   ray::observability::MetricInterface &object_store_memory_gauge_;
   ray::raylet::SpillManagerMetrics &spill_manager_metrics_;
+
+  /// === AOM Observer State ===
+
+  /// Per-object access statistics for temperature-aware eviction.
+  /// Only populated when aom_enabled is true.
+  absl::flat_hash_map<ObjectID, ObjectAccessStats> access_stats_;
+
+  /// Total capacity of the object store in bytes.
+  /// Set by the Enforcer (NodeManager passes this in).
+  int64_t total_store_capacity_ = 0;
 
   friend class LocalObjectManagerTestWithMinSpillingSize;
 };

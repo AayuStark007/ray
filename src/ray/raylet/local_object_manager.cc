@@ -23,6 +23,7 @@
 #include "absl/strings/str_format.h"
 #include "ray/common/asio/instrumented_io_context.h"
 #include "ray/stats/tag_defs.h"
+#include "absl/time/clock.h"
 
 namespace ray {
 
@@ -47,6 +48,8 @@ void LocalObjectManager::PinObjectsAndWaitForFree(
     if (inserted.second) {
       // This is the first time we're pinning this object.
       RAY_LOG(DEBUG) << "Pinning object " << object_id;
+      // add our AOM hook here
+      RecordObjectAccess(object_id, object->GetSize());
       pinned_objects_size_ += object->GetSize();
       pinned_objects_.emplace(object_id, std::move(object));
     } else {
@@ -129,6 +132,7 @@ void LocalObjectManager::ReleaseFreedObject(const ObjectID &object_id) {
   if (pinned_objects_it != pinned_objects_.end()) {
     pinned_objects_size_ -= pinned_objects_it->second->GetSize();
     pinned_objects_.erase(pinned_objects_it);
+    RemoveObjectAccessStats(object_id);
     local_objects_.erase(it);
   } else {
     // If the object is being spilled or is already spilled, then we will clean
@@ -498,6 +502,14 @@ void LocalObjectManager::AsyncRestoreSpilledObject(
                            << (now - start_time) / 1e6 << "ms. Object id:" << object_id;
             restored_bytes_total_ += restored_bytes;
             restored_objects_total_ += 1;
+            // AOM: Record restore as an access event and mark as restored.
+            RecordObjectAccess(object_id, object_size);
+            if (RayConfig::instance().aom_enabled()) {
+              auto stats_it = access_stats_.find(object_id);
+              if (stats_it != access_stats_.end()) {
+                stats_it->second.was_restored = true;
+              }
+            }
             // Adjust throughput timing to account for concurrent restore operations.
             restore_time_total_s_ +=
                 (now - std::max(start_time, last_restore_finish_ns_)) / 1e9;
@@ -568,6 +580,7 @@ void LocalObjectManager::ProcessSpilledObjectsDeleteQueue(uint32_t max_batch_siz
       // prevent a memory leak.
       pinned_objects_.erase(object_id);
     }
+    RemoveObjectAccessStats(object_id);
     local_objects_.erase(object_id);
     spilled_object_pending_delete_.pop();
   }
@@ -694,7 +707,60 @@ std::string LocalObjectManager::DebugString() const {
   result << "- cumulative restore requests: " << restored_objects_total_ << "\n";
   result << "- spilled objects pending delete: " << spilled_object_pending_delete_.size()
          << "\n";
+  
+  if (RayConfig::instance().aom_enabled()) {
+    result << "- AOM tracked objects: " << access_stats_.size() << "\n";
+    result << "- AOM store capacity: " << total_store_capacity_ << "\n";
+    result << "- AOM usage: "
+           << (total_store_capacity_ > 0
+                   ? static_cast<double>(GetPrimaryBytes()) / total_store_capacity_ * 100
+                   : 0.0)
+           << "%\n";
+  }
   return result.str();
+}
+
+void LocalObjectManager::RecordObjectAccess(const ObjectID &object_id,
+                                            size_t object_size) {
+  if (!RayConfig::instance().aom_enabled()) {
+    return;
+  }
+
+  auto now_ns = absl::GetCurrentTimeNanos();
+  auto it = access_stats_.find(object_id);
+  if (it == access_stats_.end()) {
+    ObjectAccessStats stats;
+    stats.created_at_ns = now_ns;
+    stats.last_access_ns = now_ns;
+    stats.access_count = 1;
+    stats.object_size = object_size;
+    stats.was_restored = false;
+    access_stats_.emplace(object_id, stats);
+  } else {
+    it->second.last_access_ns = now_ns;
+    it->second.access_count += 1;
+  }           
+}
+
+void LocalObjectManager::RemoveObjectAccessStats(const ObjectID &object_id) {
+  access_stats_.erase(object_id);
+}
+
+void LocalObjectManager::LogObjectTemperatures() const {
+  if (access_stats_.empty()) {
+    return;
+  }
+
+  auto now_ns = absl::GetCurrentTimeNanos();
+  double decay_rate = RayConfig::instance().aom_temperature_decay_rate();
+  RAY_LOG(INFO) << "AOM: Object temperatures (" << access_stats_.size() << " objects):";
+  for (const auto &[object_id, stats] : access_stats_) {
+    double temp = stats.ComputeTemperature(now_ns, decay_rate);
+    RAY_LOG(INFO) << " " << object_id << ": temp=" << temp
+                  << " accesses=" << stats.access_count
+                  << " size=" << stats.object_size
+                  << " restored=" << stats.was_restored;
+  }
 }
 
 };  // namespace raylet
