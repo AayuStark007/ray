@@ -103,6 +103,12 @@ class FakeLocalObjectManager : public LocalObjectManagerInterface {
 
   std::string DebugString() const override { return ""; }
 
+  void SetTotalStoreCapacity(int64_t) override {}
+
+  int64_t GetTotalStoreCapacity() const override { return 0; }
+
+  void LogObjectTemperatures() const override {}
+
  private:
   std::shared_ptr<absl::flat_hash_set<ObjectID>> objects_pending_deletion_;
 };

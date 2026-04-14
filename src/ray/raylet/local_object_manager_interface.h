@@ -71,6 +71,8 @@ class LocalObjectManagerInterface {
   virtual void SetTotalStoreCapacity(int64_t) = 0;
 
   virtual int64_t GetTotalStoreCapacity() const = 0;
+
+  virtual void LogObjectTemperatures() const = 0;
 };
 
 };  // namespace raylet

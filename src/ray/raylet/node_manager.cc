@@ -449,17 +449,19 @@ void NodeManager::RegisterGcs() {
             object_manager_.GetMemoryCapacity();
           if (usage >= RayConfig::instance().aom_high_watermark()) {
             RAY_LOG(INFO) << "AOM: Usage " << usage * 100
-                          << "% >= high watermark, triggering agressive spill.";
+                          << "% >= high watermark, triggering aggressive spill.";
             local_object_manager_.SpillObjectUptoMaxThroughput();
           } else if (usage >= RayConfig::instance().aom_target_watermark()) {
             RAY_LOG(INFO) << "AOM: Usage " << usage * 100
-                          << "% >= target watermark, initiating proactive spill.";
-            // TODO: Use strategist to select coldest objects and spill them.
-            // For now, fall through to the existing spill path.
+                          << "% >= target watermark, proactive spill.";
+            // TODO(Week 4): Use Strategist to select coldest objects and spill
+            // just enough to get below target watermark. For now, fall through
+            // to the existing spill path (which drains everything above threshold).
             local_object_manager_.SpillObjectUptoMaxThroughput();
+            local_object_manager_.LogObjectTemperatures();
           } else {
-            RAY_LOG(INFO) << "AOM: Usage " << usage * 100
-                          << "% below target watermark, no action.";
+            RAY_LOG(DEBUG) << "AOM: Usage " << usage * 100
+                           << "% below target watermark, no action.";
           }
         },
         RayConfig::instance().aom_check_interval_ms(),

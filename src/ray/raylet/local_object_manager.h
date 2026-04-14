@@ -238,10 +238,10 @@ class LocalObjectManager : public LocalObjectManagerInterface {
   void RemoveObjectAccessStats(const ObjectID &object_id);
 
   /// Set the total object store capacity (called by NodeManager during init).
-  void SetTotalStoreCapacity(int64_t capacity) override { total_store_capacity_ = capacity; };
+  void SetTotalStoreCapacity(int64_t capacity) override { total_store_capacity_ = capacity; }
 
   /// Get the total object store capacity.
-  int64_t GetTotalStoreCapacity() const override { return total_store_capacity_; };
+  int64_t GetTotalStoreCapacity() const override { return total_store_capacity_; }
 
   /// Get a const reference to the access stats map (for the Strategist).
   const absl::flat_hash_map<ObjectID, ObjectAccessStats> &GetAccessStats() const {
@@ -249,7 +249,7 @@ class LocalObjectManager : public LocalObjectManagerInterface {
   }
 
   /// Compute and log temperature for all tracked objects (debug helper).
-  void LogObjectTemperatures() const;
+  void LogObjectTemperatures() const override;
 
  private:
   struct LocalObjectInfo {
