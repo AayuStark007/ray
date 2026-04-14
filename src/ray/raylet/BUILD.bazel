@@ -187,6 +187,21 @@ ray_cc_library(
 )
 
 ray_cc_library(
+    name = "aom_policy",
+    srcs = ["aom_policy.cc"],
+    hdrs = ["aom_policy.h"],
+    visibility = [":__subpackages__"],
+    deps = [
+        ":local_object_manager",
+        "//src/ray/common:id",
+        "//src/ray/common:ray_object",
+        "//src/ray/util:logging",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+ray_cc_library(
     name = "worker_killing_policy_factory",
     srcs = select({
         "//bazel:is_linux": [
