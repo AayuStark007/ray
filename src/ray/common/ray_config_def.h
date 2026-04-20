@@ -710,7 +710,7 @@ RAY_CONFIG(uint64_t, aom_check_interval_ms, 100)
 /// High watermark (fraction of store capacity).
 /// If usage >= this, trigger aggressive spilling via the existing reactive path.
 /// Should be <= object_spilling_threshold (0.8) so AOM acts first.
-RAY_CONFIG(double, aom_high_watermark, 0.8)
+RAY_CONFIG(double, aom_high_watermark, 0.75)
 
 /// Target watermark. Proactive spilling brings usage down toward this level.
 RAY_CONFIG(double, aom_target_watermark, 0.7)

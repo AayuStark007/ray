@@ -57,5 +57,27 @@ namespace raylet {
         private:
         double decay_rate_;
     };
+
+    /// LRU-K eviction policy: evicts objects by their K-th most recent access time.
+    /// Objects accessed more than K times are ordered by their K-th access.
+    /// Objects accessed <= K times are ordered by their most recent access time.
+    class LRUKPolicy : public AOMPolicy {
+        public:
+        explicit LRUKPolicy(int k = 2) : k_(k) {}
+
+        std::vector<ObjectID> SelectEvictionCandidates(
+            const absl::flat_hash_map<ObjectID, ObjectAccessStats> &access_stats,
+            const absl::flat_hash_map<ObjectID, std::unique_ptr<RayObject>> &pinned_objects,
+            std::function<bool(const ObjectID &)> is_spillable,
+            int64_t bytes_to_free) override;
+        
+        std::string Name() const override { 
+            return "LRU-K(K=" + std::to_string(k_) + ")"; 
+        }
+        
+        private:
+        int k_;
+    };
+
 }  // namespace raylet
 }  // namespace ray

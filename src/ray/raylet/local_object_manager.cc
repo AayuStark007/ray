@@ -736,10 +736,12 @@ void LocalObjectManager::RecordObjectAccess(const ObjectID &object_id,
     stats.access_count = 1;
     stats.object_size = object_size;
     stats.was_restored = false;
+    stats.RecordAccess(now_ns, RayConfig::instance().aom_lru_k());
     access_stats_.emplace(object_id, stats);
   } else {
     it->second.last_access_ns = now_ns;
     it->second.access_count += 1;
+    it->second.RecordAccess(now_ns, RayConfig::instance().aom_lru_k());
   }           
 }
 

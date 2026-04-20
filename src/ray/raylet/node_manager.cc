@@ -444,6 +444,9 @@ void NodeManager::RegisterGcs() {
       if (policy_name == "frequency_weighted") {
         aom_policy = std::make_shared<ray::raylet::FrequencyWeightedPolicy>(
           RayConfig::instance().aom_temperature_decay_rate());
+      } else if (policy_name == "lru_k") {
+        aom_policy = std::make_shared<ray::raylet::LRUKPolicy>(
+          RayConfig::instance().aom_lru_k());
       } else {
         RAY_LOG(WARNING) << "AOM: Unknown policy '" << policy_name
                          << "', defaulting to frequency_weighted.";

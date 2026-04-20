@@ -71,5 +71,67 @@ namespace raylet {
             
             return candidates;
     }
+
+    std::vector<ObjectID> LRUKPolicy::SelectEvictionCandidates(
+        const absl::flat_hash_map<ObjectID, ObjectAccessStats> &access_stats,
+        const absl::flat_hash_map<ObjectID, std::unique_ptr<RayObject>> &pinned_objects,
+        std::function<bool(const ObjectID &)> is_spillable,
+        int64_t bytes_to_free) {
+
+            if (bytes_to_free <= 0 || pinned_objects.empty()) {
+                return {};
+            }
+
+            // Build a vector of (K-th access time, object_id) for all spillable objects.
+            // For objects with fewer than K accesses, use their most recent access time.
+            std::vector<std::pair<int64_t, ObjectID>> scored_objects;
+            scored_objects.reserve(pinned_objects.size());
+
+            for (const auto &[object_id, ray_object] : pinned_objects) {
+                if (!is_spillable(object_id)) {
+                    continue;
+                }
+
+                int64_t kth_access_time = 0;
+                auto stats_it = access_stats.find(object_id);
+                if (stats_it != access_stats.end()) {
+                    // Get the K-th most recent access time.
+                    // If the object has been accessed fewer than K times,
+                    // GetKthAccessTime returns its creation time.
+                    kth_access_time = stats_it->second.GetKthAccessTime(k_ - 1);
+                } else {
+                    // If we don't have stats (shouldn't happen normally), use 0.
+                    kth_access_time = 0;
+                }
+
+                scored_objects.emplace_back(kth_access_time, object_id);
+            }
+
+            // Sort by K-th access time ascending (oldest K-th access first).
+            // Ties are broken arbitrarily (both will be evicted).
+            std::sort(scored_objects.begin(), scored_objects.end(),
+                      [](const auto &a, const auto &b) { return a.first < b.first; });
+
+            // Collect the coldest objects until we have enough bytes.
+            std::vector<ObjectID> candidates;
+            int64_t accumulated = 0;
+            for (const auto &[kth_time, object_id] : scored_objects) {
+                if (accumulated >= bytes_to_free) {
+                    break;
+                }
+
+                auto it = pinned_objects.find(object_id);
+                if (it != pinned_objects.end()) {
+                    accumulated += it->second->GetSize();
+                    candidates.push_back(object_id);
+                }
+            }
+
+            RAY_LOG(DEBUG) << "AOM LRU-K(K=" << k_ << ")Policy: selected " << candidates.size()
+                           << " objects (" << accumulated << " bytes) to spill"
+                           << " (target: " << bytes_to_free << " bytes)";
+
+            return candidates;
+    }
 }  // namespace raylet
 }  // namespace ray
