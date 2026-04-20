@@ -511,7 +511,6 @@ void NodeManager::RegisterGcs() {
             // for next epoch. This helps multi-epoch training significantly.
             if (RayConfig::instance().aom_prefetch_enabled() && prefetch_candidates.size() < 20) {
               std::vector<std::pair<ObjectID, int64_t>> recent_accesses;
-              int64_t now_ns = absl::GetCurrentTimeNanos();
               
               // Collect objects by recency (most recent first).
               for (const auto &entry : access_stats) {
@@ -528,13 +527,11 @@ void NodeManager::RegisterGcs() {
               if (recent_accesses.size() >= 5) {
                 const int64_t kTimeWindowNs = 100000000;  // 100ms window for coherent access pattern.
                 int coherent_count = 0;
-                int64_t oldest_coherent_time = recent_accesses[0].second;
                 
                 for (size_t i = 1; i < std::min(size_t(5), recent_accesses.size()); ++i) {
                   int64_t time_diff = recent_accesses[i-1].second - recent_accesses[i].second;
                   if (time_diff > 0 && time_diff < kTimeWindowNs) {
                     coherent_count++;
-                    oldest_coherent_time = recent_accesses[i].second;
                   }
                 }
                 
