@@ -805,5 +805,132 @@ bool LocalObjectManager::SpillObjectsProactively() {
   return true;
 }
 
+bool LocalObjectManager::SpillObjectsAggressively() {
+  if (!aom_policy_ || total_store_capacity_ <= 0) {
+    return false;
+  }
+  if (RayConfig::instance().object_spilling_config().empty()) {
+    return false;
+  }
+
+  int64_t primary_bytes = GetPrimaryBytes();
+  int64_t low_watermark_bytes = static_cast<int64_t>(
+    RayConfig::instance().aom_low_watermark() * total_store_capacity_);
+  int64_t bytes_to_free = primary_bytes - low_watermark_bytes;
+
+  if (bytes_to_free <= 0) {
+    return false;
+  }
+
+  RAY_LOG(INFO) << "AOM: Aggressive spill (to low watermark): primary_bytes="
+                << primary_bytes << " low_watermark_bytes=" << low_watermark_bytes
+                << " bytes_to_free=" << bytes_to_free
+                << " policy=" << aom_policy_->Name();
+  
+  auto candidates = aom_policy_->SelectEvictionCandidates(
+    access_stats_, pinned_objects_, is_plasma_object_spillable_, bytes_to_free);
+  
+  if (candidates.empty()) {
+    RAY_LOG(DEBUG) << "AOM: No spillable candidates found for aggressive spill.";
+    return false;
+  }
+
+  RAY_LOG(INFO) << "AOM: Aggressive spilling " << candidates.size()
+                << " objects to create headroom.";
+  SpillObjectsInternal(candidates, [](const ray::Status &status) {
+    if (!status.ok()) {
+      RAY_LOG(WARNING) << "AOM: Aggressive spill failed: " << status.ToString();
+    }
+  });
+  return true;
+}
+
+void LocalObjectManager::PrefetchSpilledObjects(
+    const std::vector<ObjectID> &object_ids) {
+  if (!RayConfig::instance().aom_prefetch_enabled()) {
+    return;  // Prefetching disabled.
+  }
+
+  if (object_ids.empty()) {
+    return;
+  }
+
+  int64_t bytes_to_prefetch = 0;
+  std::vector<ObjectID> candidates_to_prefetch;
+
+  // Filter to only spilled objects that aren't already pending restore.
+  for (const auto &object_id : object_ids) {
+    // Skip if already pending restore.
+    if (objects_pending_restore_.count(object_id) > 0) {
+      continue;
+    }
+
+    // Check if object is spilled.
+    auto url_it = spilled_objects_url_.find(object_id);
+    if (url_it == spilled_objects_url_.end()) {
+      continue;  // Not spilled.
+    }
+
+    // Get object size from local_objects_ (which tracks sizes for all accessed objects).
+    int64_t object_size = 0;
+    auto local_obj_it = local_objects_.find(object_id);
+    if (local_obj_it != local_objects_.end()) {
+      object_size = local_obj_it->second.object_size_;
+    } else if (RayConfig::instance().aom_enabled()) {
+      // Fallback to access_stats if available (for objects that may have been freed locally).
+      auto stats_it = access_stats_.find(object_id);
+      if (stats_it != access_stats_.end()) {
+        object_size = stats_it->second.object_size;
+      }
+    }
+
+    if (object_size == 0) {
+      continue;  // Skip if we can't determine size.
+    }
+
+    if (bytes_to_prefetch + object_size >
+        RayConfig::instance().aom_prefetch_max_bytes()) {
+      break;  // Hit prefetch capacity limit.
+    }
+
+    candidates_to_prefetch.push_back(object_id);
+    bytes_to_prefetch += object_size;
+
+    if (static_cast<int32_t>(candidates_to_prefetch.size()) >= 
+        RayConfig::instance().aom_prefetch_batch_size()) {
+      break;  // Hit batch size limit.
+    }
+  }
+
+  if (candidates_to_prefetch.empty()) {
+    return;  // Nothing to prefetch.
+  }
+
+  RAY_LOG(INFO) << "AOM: Prefetching " << candidates_to_prefetch.size() << " objects ("
+                << bytes_to_prefetch / (1024.0 * 1024.0) << " MB)";
+
+  // Schedule async restores for each prefetch candidate.
+  for (const auto &object_id : candidates_to_prefetch) {
+    const auto &object_url = spilled_objects_url_[object_id];
+    int64_t object_size = 0;
+    auto local_obj_it = local_objects_.find(object_id);
+    if (local_obj_it != local_objects_.end()) {
+      object_size = local_obj_it->second.object_size_;
+    }
+
+    // Use a no-op callback for prefetch (we don't need to wait for completion).
+    AsyncRestoreSpilledObject(
+        object_id, object_size, object_url, [](const ray::Status &status) {
+          if (!status.ok()) {
+            RAY_LOG(WARNING) << "Prefetch restore failed: " << status.ToString();
+          }
+        });
+  }
+}
+
+bool LocalObjectManager::IsObjectSpilled(const ObjectID &object_id) const {
+  return spilled_objects_url_.count(object_id) > 0;
+}
+
 };  // namespace raylet
 };  // namespace ray

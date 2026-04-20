@@ -241,10 +241,22 @@ class LocalObjectManager : public LocalObjectManagerInterface {
   /// Uses the AOM policy to select candidates. Returns true if spilling was initiated.
   bool SpillObjectsProactively() override;
 
+  /// Aggressively spill objects to bring usage below the low watermark.
+  /// Called when usage exceeds high watermark; creates buffer space to prevent
+  /// rapid spill cycles. Returns true if spilling was initiated.
+  bool SpillObjectsAggressively() override;
+
   /// Set the AOM eviction policy.
   void SetAOMPolicy(std::shared_ptr<AOMPolicy> policy) override {
     aom_policy_ = std::move(policy);
   }
+
+  /// Prefetch spilled objects to restore them to plasma in the background.
+  /// This schedules restoration without blocking; restores happen asynchronously.
+  void PrefetchSpilledObjects(const std::vector<ObjectID> &object_ids) override;
+
+  /// Check if an object is currently spilled to external storage.
+  bool IsObjectSpilled(const ObjectID &object_id) const override;
 
  private:
   struct LocalObjectInfo {

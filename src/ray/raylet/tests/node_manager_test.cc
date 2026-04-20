@@ -111,7 +111,18 @@ class FakeLocalObjectManager : public LocalObjectManagerInterface {
 
   bool SpillObjectsProactively() override { return false; }
 
+  bool SpillObjectsAggressively() override { return false; }
+
   void SetAOMPolicy(std::shared_ptr<ray::raylet::AOMPolicy>) override {}
+
+  void PrefetchSpilledObjects(const std::vector<ObjectID> &object_ids) override {}
+
+  bool IsObjectSpilled(const ObjectID &object_id) const override { return false; }
+
+  const absl::flat_hash_map<ObjectID, ray::raylet::ObjectAccessStats> &GetAccessStats() const override {
+    static const absl::flat_hash_map<ObjectID, ray::raylet::ObjectAccessStats> empty_stats;
+    return empty_stats;
+  }
 
  private:
   std::shared_ptr<absl::flat_hash_set<ObjectID>> objects_pending_deletion_;
