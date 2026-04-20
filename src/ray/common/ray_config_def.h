@@ -728,6 +728,19 @@ RAY_CONFIG(std::string, aom_eviction_policy, "frequency_weighted")
 /// K parameter for LRU-K policy (only used when aom_eviction_policy = "lru_k").
 RAY_CONFIG(int32_t, aom_lru_k, 2)
 
+/// Enable proactive prefetching of spilled objects to reduce restore latency.
+/// When enabled, the AOM Enforcer will schedule background restores for likely-to-be-needed
+/// objects before ray.get() is called, reducing blocking time.
+RAY_CONFIG(bool, aom_prefetch_enabled, true)
+
+/// Batch size for prefetch operations (number of objects to prefetch at once).
+/// Larger batches may improve throughput but use more IO workers.
+RAY_CONFIG(int32_t, aom_prefetch_batch_size, 10)
+
+/// Maximum number of bytes to prefetch concurrently (across all pending prefetches).
+/// Prevents prefetching from consuming all IO worker capacity.
+RAY_CONFIG(int64_t, aom_prefetch_max_bytes, 200000000)  // 200 MB by default
+
 /// Grace period until we throw the OOM error to the application in seconds.
 /// In unlimited allocation mode, this is the time delay prior to fallback allocating.
 RAY_CONFIG(int64_t, oom_grace_period_s, 2)

@@ -467,8 +467,8 @@ void NodeManager::RegisterGcs() {
             object_manager_.GetMemoryCapacity();
           if (usage >= RayConfig::instance().aom_high_watermark()) {
             RAY_LOG(INFO) << "AOM: Usage " << usage * 100
-                          << "% >= high watermark, triggering aggressive spill.";
-            local_object_manager_.SpillObjectUptoMaxThroughput();
+                          << "% >= high watermark, aggressive spill to low watermark.";
+            local_object_manager_.SpillObjectsAggressively();
           } else if (usage >= RayConfig::instance().aom_target_watermark()) {
             RAY_LOG(INFO) << "AOM: Usage " << usage * 100
                           << "% >= target watermark, proactive spill.";
@@ -476,6 +476,98 @@ void NodeManager::RegisterGcs() {
           } else {
             RAY_LOG(DEBUG) << "AOM: Usage " << usage * 100
                            << "% below target watermark, no action.";
+          }
+
+          // Opportunistic prefetching of recently-accessed spilled objects.
+          if (RayConfig::instance().aom_prefetch_enabled()) {
+            const auto &access_stats = local_object_manager_.GetAccessStats();
+            std::vector<ObjectID> prefetch_candidates;
+            
+            // Collect recently-accessed spilled objects (high access count, high recency).
+            // Sort by recency (most recently accessed first) to prefetch likely candidates.
+            for (const auto &entry : access_stats) {
+              const auto &object_id = entry.first;
+              const auto &stats = entry.second;
+              
+              // Only prefetch spilled objects.
+              if (!local_object_manager_.IsObjectSpilled(object_id)) {
+                continue;
+              }
+              
+              // Skip if recently restored (to avoid prefetch loop).
+              if (stats.was_restored) {
+                continue;
+              }
+              
+              // Use access count as a hint; higher count = hotter object.
+              if (stats.access_count >= 2) {  // Accessed at least twice.
+                prefetch_candidates.push_back(object_id);
+              }
+            }
+            
+            // Enhanced prefetch: Detect sequential patterns for cyclic workloads.
+            // If we detect sequential access patterns (e.g., objects 0,1,2,3 accessed in order),
+            // opportunistically prefetch "next" objects in sequence to hide restore latency
+            // for next epoch. This helps multi-epoch training significantly.
+            if (RayConfig::instance().aom_prefetch_enabled() && prefetch_candidates.size() < 20) {
+              std::vector<std::pair<ObjectID, int64_t>> recent_accesses;
+              int64_t now_ns = absl::GetCurrentTimeNanos();
+              
+              // Collect objects by recency (most recent first).
+              for (const auto &entry : access_stats) {
+                recent_accesses.emplace_back(entry.first, entry.second.last_access_ns);
+              }
+              
+              // Sort by recency (newest first).
+              std::sort(recent_accesses.begin(), recent_accesses.end(),
+                        [](const auto &a, const auto &b) { return a.second > b.second; });
+              
+              // Look for sequential inter-access distances (indicating cyclic pattern).
+              // If last 5 objects were accessed in close time proximity and are spilled,
+              // prefetch more aggressively.
+              if (recent_accesses.size() >= 5) {
+                const int64_t kTimeWindowNs = 100000000;  // 100ms window for coherent access pattern.
+                int coherent_count = 0;
+                int64_t oldest_coherent_time = recent_accesses[0].second;
+                
+                for (size_t i = 1; i < std::min(size_t(5), recent_accesses.size()); ++i) {
+                  int64_t time_diff = recent_accesses[i-1].second - recent_accesses[i].second;
+                  if (time_diff > 0 && time_diff < kTimeWindowNs) {
+                    coherent_count++;
+                    oldest_coherent_time = recent_accesses[i].second;
+                  }
+                }
+                
+                // If 4+ consecutive accesses within tight time window, assume cyclic pattern.
+                if (coherent_count >= 4) {
+                  // Insert high-recency, spilled, not-yet-restored objects with access_count >= 1.
+                  const int kMaxAdditionalPrefetch = 3;
+                  int added = 0;
+                  for (const auto &entry : recent_accesses) {
+                    if (added >= kMaxAdditionalPrefetch) break;
+                    
+                    if (local_object_manager_.IsObjectSpilled(entry.first)) {
+                      const auto &stats = access_stats.at(entry.first);
+                      if (stats.access_count >= 1 && !stats.was_restored &&
+                          std::find(prefetch_candidates.begin(), prefetch_candidates.end(),
+                                    entry.first) == prefetch_candidates.end()) {
+                        prefetch_candidates.push_back(entry.first);
+                        added++;
+                      }
+                    }
+                  }
+                  RAY_LOG(INFO) << "AOM: Cyclic access pattern detected (coherency: "
+                                << coherent_count << "/5). Added " << added
+                                << " predictive prefetch candidates.";
+                }
+              }
+            }
+            
+            if (!prefetch_candidates.empty()) {
+              RAY_LOG(DEBUG) << "AOM: Prefetch: " << prefetch_candidates.size()
+                             << " candidates for restore.";
+              local_object_manager_.PrefetchSpilledObjects(prefetch_candidates);
+            }
           }
         },
         RayConfig::instance().aom_check_interval_ms(),

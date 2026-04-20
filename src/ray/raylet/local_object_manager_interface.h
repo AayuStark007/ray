@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "ray/common/id.h"
 #include "ray/common/ray_object.h"
 #include "src/ray/protobuf/node_manager.pb.h"
@@ -28,6 +29,7 @@ namespace ray {
 namespace raylet {
 
 class AOMPolicy; // Forward decl
+struct ObjectAccessStats; // Forward decl
 class LocalObjectManagerInterface {
  public:
   virtual ~LocalObjectManagerInterface() = default;
@@ -77,7 +79,15 @@ class LocalObjectManagerInterface {
 
   virtual bool SpillObjectsProactively() = 0;
 
+  virtual bool SpillObjectsAggressively() = 0;
+
   virtual void SetAOMPolicy(std::shared_ptr<class AOMPolicy>) = 0;
+
+  virtual void PrefetchSpilledObjects(const std::vector<ObjectID> &object_ids) = 0;
+
+  virtual bool IsObjectSpilled(const ObjectID &object_id) const = 0;
+
+  virtual const absl::flat_hash_map<ObjectID, ray::raylet::ObjectAccessStats> &GetAccessStats() const = 0;
 };
 
 };  // namespace raylet
