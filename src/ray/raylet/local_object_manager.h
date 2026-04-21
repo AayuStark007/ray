@@ -14,13 +14,13 @@
 
 #pragma once
 
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <queue>
 #include <string>
 #include <utility>
 #include <vector>
-#include <cmath>
 
 #include "absl/strings/str_format.h"
 #include "absl/time/clock.h"
@@ -224,13 +224,16 @@ class LocalObjectManager : public LocalObjectManagerInterface {
   void RemoveObjectAccessStats(const ObjectID &object_id);
 
   /// Set the total object store capacity (called by NodeManager during init).
-  void SetTotalStoreCapacity(int64_t capacity) override { total_store_capacity_ = capacity; }
+  void SetTotalStoreCapacity(int64_t capacity) override {
+    total_store_capacity_ = capacity;
+  }
 
   /// Get the total object store capacity.
   int64_t GetTotalStoreCapacity() const override { return total_store_capacity_; }
 
   /// Get a const reference to the access stats map (for the Strategist).
-  const absl::flat_hash_map<ObjectID, ObjectAccessStats> &GetAccessStats() const {
+  const absl::flat_hash_map<ObjectID, ObjectAccessStats> &GetAccessStats()
+      const override {
     return access_stats_;
   }
 
@@ -271,7 +274,7 @@ class LocalObjectManager : public LocalObjectManagerInterface {
   int64_t GetAOMObjectsTracked() const { return access_stats_.size(); }
 
   /// Set the AOM metrics interface (called by NodeManager during init).
-  void SetAOMMetrics(AOMMetrics *metrics) { aom_metrics_ = metrics; }
+  void SetAOMMetrics(AOMMetrics *metrics) override { aom_metrics_ = metrics; }
 
  private:
   struct LocalObjectInfo {
