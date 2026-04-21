@@ -177,3 +177,17 @@ ray_cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+ray_cc_test(
+    name = "aom_policy_test",
+    size = "small",
+    srcs = ["aom_policy_test.cc"],
+    tags = ["team:core"],
+    deps = [
+        "//src/ray/common:id",
+        "//src/ray/common:ray_object",
+        "//src/ray/raylet:aom_policy",
+        "//src/ray/raylet:aom_types",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

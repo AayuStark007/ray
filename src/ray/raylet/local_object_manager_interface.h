@@ -28,9 +28,16 @@ namespace ray {
 
 namespace raylet {
 
-class AOMPolicy; // Forward decl
-struct ObjectAccessStats; // Forward decl
-struct AOMMetrics; // Forward decl
+class AOMPolicy;    // Forward decl
+struct AOMMetrics;  // Forward decl
+}  // namespace raylet
+}  // namespace ray
+
+#include "ray/raylet/aom_types.h"
+
+namespace ray {
+namespace raylet {
+
 class LocalObjectManagerInterface {
  public:
   virtual ~LocalObjectManagerInterface() = default;
@@ -88,7 +95,8 @@ class LocalObjectManagerInterface {
 
   virtual bool IsObjectSpilled(const ObjectID &object_id) const = 0;
 
-  virtual const absl::flat_hash_map<ObjectID, ray::raylet::ObjectAccessStats> &GetAccessStats() const = 0;
+  virtual const absl::flat_hash_map<ObjectID, ray::raylet::ObjectAccessStats>
+      &GetAccessStats() const = 0;
 
   virtual void SetAOMMetrics(struct AOMMetrics *metrics) = 0;
 };
