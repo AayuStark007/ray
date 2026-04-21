@@ -354,6 +354,19 @@ int main(int argc, char *argv[]) {
       spill_manager_objects_bytes_gauge,
       spill_manager_request_total_gauge,
       spill_manager_throughput_mb_gauge};
+
+  /// Create AOM metrics (observability for Adaptive Object Manager)
+  ray::stats::Count aom_proactive_spills_total =
+      ray::raylet::GetAOMProactiveSpillsTotalMetric();
+  ray::stats::Gauge aom_avg_temperature_gauge =
+      ray::raylet::GetAOMAvgTemperatureGaugeMetric();
+  ray::stats::Gauge aom_objects_tracked_gauge =
+      ray::raylet::GetAOMObjectsTrackedGaugeMetric();
+  ray::raylet::AOMMetrics aom_metrics{
+      aom_proactive_spills_total,
+      aom_avg_temperature_gauge,
+      aom_objects_tracked_gauge};
+
   ray::stats::Count memory_manager_worker_eviction_total_count =
       ray::raylet::GetMemoryManagerWorkerEvictionTotalCountMetric();
   ray::stats::Gauge scheduler_tasks_gauge = ray::raylet::GetSchedulerTasksGaugeMetric();
@@ -894,6 +907,12 @@ int main(int argc, char *argv[]) {
         object_directory.get(),
         object_store_memory_gauge,
         spill_manager_metrics);
+    
+    /// Set AOM metrics interface on local object manager
+    if (RayConfig::instance().aom_enabled()) {
+      dynamic_cast<ray::raylet::LocalObjectManager *>(local_object_manager.get())
+          ->SetAOMMetrics(&aom_metrics);
+    }
 
     lease_dependency_manager = std::make_unique<ray::raylet::LeaseDependencyManager>(
         *object_manager, task_by_state_counter);

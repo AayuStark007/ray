@@ -639,6 +639,22 @@ void LocalObjectManager::FillObjectStoreStats(rpc::GetNodeStatsReply *reply) con
   stats->set_num_object_store_primary_copies(local_objects_.size());
 }
 
+double LocalObjectManager::GetAverageObjectTemperature() const {
+  if (!RayConfig::instance().aom_enabled() || access_stats_.empty()) {
+    return 0.0;
+  }
+
+  int64_t now_ns = absl::GetCurrentTimeNanos();
+  double decay_rate = RayConfig::instance().aom_temperature_decay_rate();
+  double total_temperature = 0.0;
+
+  for (const auto &[object_id, stats] : access_stats_) {
+    total_temperature += stats.ComputeTemperature(now_ns, decay_rate);
+  }
+
+  return total_temperature / access_stats_.size();
+}
+
 void LocalObjectManager::RecordMetrics() const {
   /// Record Metrics.
   if (spilled_bytes_total_ != 0 && spill_time_total_s_ != 0) {
@@ -678,6 +694,16 @@ void LocalObjectManager::RecordMetrics() const {
 
   spill_manager_metrics_.spill_manager_request_total_gauge.Record(
       num_failed_deletion_requests_, {{"Type", "FailedDeletion"}});
+
+  /// Record AOM metrics if enabled
+  if (RayConfig::instance().aom_enabled() && aom_metrics_ != nullptr) {
+    aom_metrics_->aom_proactive_spills_total.Record(
+        static_cast<double>(proactive_spills_total_), ray::stats::TagsType());
+    aom_metrics_->aom_avg_temperature_gauge.Record(GetAverageObjectTemperature(),
+                                                   ray::stats::TagsType());
+    aom_metrics_->aom_objects_tracked_gauge.Record(
+        static_cast<double>(GetAOMObjectsTracked()), ray::stats::TagsType());
+  }
 }
 
 int64_t LocalObjectManager::GetPrimaryBytes() const {
@@ -802,6 +828,7 @@ bool LocalObjectManager::SpillObjectsProactively() {
       RAY_LOG(WARNING) << "AOM: Proactive spill failed: " << status.ToString();
     }
   });
+  proactive_spills_total_++;
   return true;
 }
 

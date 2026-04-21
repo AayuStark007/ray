@@ -46,6 +46,12 @@ struct SpillManagerMetrics {
   ray::observability::MetricInterface &spill_manager_throughput_mb_gauge;
 };
 
+struct AOMMetrics {
+  ray::observability::MetricInterface &aom_proactive_spills_total;
+  ray::observability::MetricInterface &aom_avg_temperature_gauge;
+  ray::observability::MetricInterface &aom_objects_tracked_gauge;
+};
+
 inline ray::stats::Gauge GetResourceUsageGaugeMetric() {
   return ray::stats::Gauge{
       /*name=*/"resources",
@@ -205,6 +211,29 @@ inline ray::stats::Gauge GetLocalResourceViewNodeCountGaugeMetric() {
       /*name=*/"local_resource_view_node_count",
       /*description=*/"Number of nodes tracked locally by the reporting raylet.",
       /*unit=*/"",
+  };
+}
+
+inline ray::stats::Count GetAOMProactiveSpillsTotalMetric() {
+  return ray::stats::Count{
+      /*name=*/"aom_proactive_spills_total",
+      /*description=*/"Total number of proactive (temperature-aware) spill operations triggered by AOM.",
+      /*unit=*/"operations"};
+}
+
+inline ray::stats::Gauge GetAOMAvgTemperatureGaugeMetric() {
+  return ray::stats::Gauge{
+      /*name=*/"aom_avg_temperature",
+      /*description=*/"Average temperature of tracked objects in AOM (higher = hotter/more recently accessed).",
+      /*unit=*/"",
+  };
+}
+
+inline ray::stats::Gauge GetAOMObjectsTrackedGaugeMetric() {
+  return ray::stats::Gauge{
+      /*name=*/"aom_objects_tracked",
+      /*description=*/"Number of objects currently tracked by AOM for temperature measurement.",
+      /*unit=*/"objects",
   };
 }
 

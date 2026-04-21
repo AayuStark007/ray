@@ -258,6 +258,21 @@ class LocalObjectManager : public LocalObjectManagerInterface {
   /// Check if an object is currently spilled to external storage.
   bool IsObjectSpilled(const ObjectID &object_id) const override;
 
+  /// === AOM Metrics Getters ===
+
+  /// Get the total number of proactive spills performed.
+  int64_t GetProactiveSpillsTotal() const { return proactive_spills_total_; }
+
+  /// Compute average temperature of all tracked objects.
+  /// Returns 0 if no objects are tracked or AOM is disabled.
+  double GetAverageObjectTemperature() const;
+
+  /// Get the number of objects currently tracked by AOM.
+  int64_t GetAOMObjectsTracked() const { return access_stats_.size(); }
+
+  /// Set the AOM metrics interface (called by NodeManager during init).
+  void SetAOMMetrics(AOMMetrics *metrics) { aom_metrics_ = metrics; }
+
  private:
   struct LocalObjectInfo {
     LocalObjectInfo(const rpc::Address &owner_address,
@@ -487,6 +502,12 @@ class LocalObjectManager : public LocalObjectManagerInterface {
 
   /// The pluggable AOM eviction policy (set by NodeManager on startup).
   std::shared_ptr<AOMPolicy> aom_policy_;
+
+  /// Total number of proactive spills performed by AOM.
+  int64_t proactive_spills_total_ = 0;
+
+  /// AOM observability metrics (only populated when aom_enabled is true).
+  ray::raylet::AOMMetrics *aom_metrics_ = nullptr;
 
   friend class LocalObjectManagerTestWithMinSpillingSize;
 };

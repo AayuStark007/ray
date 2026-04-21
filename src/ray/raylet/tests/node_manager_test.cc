@@ -124,6 +124,8 @@ class FakeLocalObjectManager : public LocalObjectManagerInterface {
     return empty_stats;
   }
 
+  void SetAOMMetrics(ray::raylet::AOMMetrics *metrics) override {}
+
  private:
   std::shared_ptr<absl::flat_hash_set<ObjectID>> objects_pending_deletion_;
 };
